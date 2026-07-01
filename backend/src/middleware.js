@@ -3,8 +3,11 @@ import keys from './keys.js';
 import { db } from './db.js';
 
 export const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  let token = req.cookies?.access_token;
+  if (!token) {
+    const authHeader = req.headers['authorization'];
+    token = authHeader && authHeader.split(' ')[1];
+  }
 
   if (!token) return res.status(401).json({ error: 'Access token required' });
 

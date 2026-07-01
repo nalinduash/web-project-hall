@@ -7,6 +7,7 @@ import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 
 import fs from 'fs';
+import cookieParser from 'cookie-parser';
 
 import { initializeDatabase, db } from './db.js';
 import keys from './keys.js';
@@ -44,9 +45,25 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 // ----------------------------------------------------------------
 // Core Middleware
 // ----------------------------------------------------------------
-// RLS context removed during Knex refactor
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json());
+app.use(cookieParser());
+
+const setAuthCookies = (res, tokenSet) => {
+  res.cookie('access_token', tokenSet.access_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 15 * 60 * 1000, // 15 mins
+  });
+
+  res.cookie('refresh_token', tokenSet.refresh_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+};
 
 // Serve uploaded thumbnails as static files
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -108,30 +125,58 @@ app.post('/api/auth/otp/send', async (req, res) => {
 });
 
 app.post('/api/auth/otp/verify', async (req, res) => {
-  try { res.json(await verifyOTP(req.body.email, req.body.code)); }
-  catch (e) { res.status(400).json({ error: e.message }); }
+  try {
+    const tokens = await verifyOTP(req.body.email, req.body.code);
+    setAuthCookies(res, tokens);
+    res.json({ message: 'OTP verification successful' });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 app.post('/api/auth/signup', async (req, res) => {
   try {
     const tokens = await signupWithPassword(req.body.email, req.body.password, req.body.role_id || 3);
-    res.status(201).json(tokens);
-  } catch (e) { res.status(400).json({ error: e.message }); }
+    setAuthCookies(res, tokens);
+    res.status(201).json({ message: 'Signup successful' });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  try { res.json(await loginWithPassword(req.body.email, req.body.password)); }
-  catch (e) { res.status(401).json({ error: e.message }); }
+  try {
+    const tokens = await loginWithPassword(req.body.email, req.body.password);
+    setAuthCookies(res, tokens);
+    res.json({ message: 'Login successful' });
+  } catch (e) {
+    res.status(401).json({ error: e.message });
+  }
 });
 
 app.post('/api/auth/refresh', async (req, res) => {
-  try { res.json(await refreshTokens(req.body.refresh_token)); }
-  catch (e) { res.status(401).json({ error: e.message }); }
+  try {
+    const rfToken = req.cookies.refresh_token;
+    const tokens = await refreshTokens(rfToken);
+    setAuthCookies(res, tokens);
+    res.json({ message: 'Tokens refreshed successfully' });
+  } catch (e) {
+    res.status(401).json({ error: e.message });
+  }
 });
 
 app.post('/api/auth/revoke', async (req, res) => {
-  try { res.json(await revokeToken(req.body.token)); }
-  catch (e) { res.status(400).json({ error: e.message }); }
+  try {
+    const rfToken = req.cookies.refresh_token;
+    if (rfToken) {
+      await revokeToken(rfToken);
+    }
+    res.clearCookie('access_token');
+    res.clearCookie('refresh_token');
+    res.json({ message: 'Token successfully revoked' });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // ----------------------------------------------------------------
@@ -146,12 +191,8 @@ app.get('/api/auth/google/callback',
   async (req, res) => {
     try {
       const tokenSet = await generateTokenSet(req.user);
-      const params = new URLSearchParams({
-        access_token:  tokenSet.access_token,
-        refresh_token: tokenSet.refresh_token,
-        id_token:      tokenSet.id_token,
-      });
-      res.redirect(`${FRONTEND_URL}/auth/callback?${params}`);
+      setAuthCookies(res, tokenSet);
+      res.redirect(`${FRONTEND_URL}/auth/callback`);
     } catch (err) {
       res.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
     }

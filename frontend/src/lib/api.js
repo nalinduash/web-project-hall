@@ -5,20 +5,8 @@ export const API_URL = import.meta.env.VITE_API_URL || `http://${window.location
 
 const api = axios.create({
   baseURL: API_URL,
+  withCredentials: true,
 });
-
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      config.headers['Authorization'] = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
 
 api.interceptors.response.use(
   (response) => {
@@ -35,23 +23,12 @@ api.interceptors.response.use(
       !isRefreshReq
     ) {
       originalRequest._retry = true;
-      const refreshToken = localStorage.getItem('refresh_token');
-
-      if (!refreshToken) {
-        handleSessionExpired();
-        return Promise.reject(error);
-      }
 
       try {
-        const { data } = await axios.post(`${API_URL}/api/auth/refresh`, {
-          refresh_token: refreshToken,
+        await axios.post(`${API_URL}/api/auth/refresh`, {}, {
+          withCredentials: true,
         });
 
-        localStorage.setItem('access_token', data.access_token);
-        localStorage.setItem('refresh_token', data.refresh_token);
-        localStorage.setItem('id_token', data.id_token);
-
-        originalRequest.headers['Authorization'] = `Bearer ${data.access_token}`;
         return api(originalRequest);
       } catch (refreshError) {
         handleSessionExpired();
