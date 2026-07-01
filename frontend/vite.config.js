@@ -1,4 +1,3 @@
-
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -11,9 +10,15 @@ const __dirname = path.dirname(__filename)
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  server: {
+    allowedHosts: [
+      "4.240.112.63.nip.io",
+      "localhost"
+    ],
+  },
   resolve: {
     alias: {
-       "@": path.resolve(__dirname, "./src"),
-    }
-  }
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
 })
