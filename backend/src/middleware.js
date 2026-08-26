@@ -80,10 +80,11 @@ export const requireProjectOwnership = async (req, res, next) => {
   try {
     const own = await db('projects')
       .where({ id: projectId, created_by: userId })
-      .first('id');
+      .first(['id', 'created_by', 'visibility']);
 
     if (!own) return res.status(403).json({ error: 'Project not found or you do not own it' });
     
+    req.project = own;
     next();
   } catch (err) {
     res.status(500).json({ error: 'Failed to verify project ownership' });

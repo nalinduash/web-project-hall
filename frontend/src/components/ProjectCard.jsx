@@ -57,9 +57,11 @@ export default function ProjectCard({ project, onEdit, onDelete, onSelectAuthor,
           <span className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-semibold border ${
             project.visibility === 'public' 
               ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' 
-              : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+              : project.visibility === 'removed'
+                ? 'bg-destructive/10 text-destructive border-destructive/20'
+                : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
           }`}>
-            {project.visibility === 'public' ? 'Public' : 'Private'}
+            {project.visibility === 'public' ? 'Public' : project.visibility === 'removed' ? 'Removed by Admin' : 'Private'}
           </span>
         )}
       </div>
@@ -96,8 +98,18 @@ export default function ProjectCard({ project, onEdit, onDelete, onSelectAuthor,
         </div>
         {isOwner && (
           <div className="flex w-full gap-2 border-t border-border/30 pt-2 ">
-            <Button variant="outline" size="sm" onClick={() => onEdit(project)} className="flex-1 h-7 text-xs gap-1"><Pencil size={12} /> Edit</Button>
-            <Button variant="destructive" size="sm" onClick={() => onDelete(project.id)} className="flex-1 h-7 text-xs gap-1"><Trash size={12} /> Delete</Button>
+            {project.visibility === 'removed' ? (
+              <Button variant="outline" size="sm" disabled className="flex-1 h-7 text-xs gap-1 opacity-50 cursor-not-allowed" title="Moderated projects cannot be edited">
+                <Pencil size={12} /> Moderated
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => onEdit(project)} className="flex-1 h-7 text-xs gap-1">
+                <Pencil size={12} /> Edit
+              </Button>
+            )}
+            <Button variant="destructive" size="sm" onClick={() => onDelete(project.id)} className="flex-1 h-7 text-xs gap-1">
+              <Trash size={12} /> Delete
+            </Button>
           </div>
         )}
       </CardFooter>

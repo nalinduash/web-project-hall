@@ -101,6 +101,11 @@ router.put('/:id', authenticateToken, requirePermission('projects:write'), requi
     return res.status(400).json({ error: "visibility must be 'public' or 'private'" });
   }
 
+  // Prevent users from updating or altering the visibility of moderated projects
+  if (req.project?.visibility === 'removed') {
+    return res.status(403).json({ error: 'This project has been removed by an administrator and cannot be modified' });
+  }
+
   try {
     const [project] = await db('projects')
       .where({ id })
@@ -137,6 +142,11 @@ router.post(
   upload.single('thumbnail'),
   async (req, res) => {
     const id = parseInt(req.params.id, 10);
+
+    // Prevent users from altering thumbnails of moderated projects
+    if (req.project?.visibility === 'removed') {
+      return res.status(403).json({ error: 'This project has been removed by an administrator and cannot be modified' });
+    }
 
     if (!req.file) return res.status(400).json({ error: 'No image file uploaded' });
 
