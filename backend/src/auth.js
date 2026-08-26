@@ -9,17 +9,40 @@ dotenv.config();
 const JWT_ISSUER = process.env.JWT_ISSUER || 'http://localhost:5000';
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE || 'http://localhost:5173';
 
+const PBKDF2_ITERATIONS = 600000;
+const PBKDF2_KEYLEN = 64;
+const PBKDF2_DIGEST = 'sha512';
+
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return `${salt}:${hash}`;
+  const hash = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEYLEN, PBKDF2_DIGEST).toString('hex');
+  return `${salt}:${PBKDF2_ITERATIONS}:${hash}`;
 }
 
 export function verifyPassword(password, storedPasswordHash) {
-  if (!storedPasswordHash) return false;
-  const [salt, hash] = storedPasswordHash.split(':');
-  const verifyHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return hash === verifyHash;
+  if (!storedPasswordHash || typeof storedPasswordHash !== 'string') return false;
+  const parts = storedPasswordHash.split(':');
+
+  let salt, iterations, storedHashHex;
+  if (parts.length === 3) {
+    [salt, iterations, storedHashHex] = parts;
+    iterations = parseInt(iterations, 10) || PBKDF2_ITERATIONS;
+  } else if (parts.length === 2) {
+    // Backward compatibility for legacy 1,000-iteration hashes
+    [salt, storedHashHex] = parts;
+    iterations = 1000;
+  } else {
+    return false;
+  }
+
+  const verifyHashBuf = crypto.pbkdf2Sync(password, salt, iterations, PBKDF2_KEYLEN, PBKDF2_DIGEST);
+  const storedHashBuf = Buffer.from(storedHashHex, 'hex');
+
+  if (verifyHashBuf.length !== storedHashBuf.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(verifyHashBuf, storedHashBuf);
 }
 
 export async function sendOTP(email) {
@@ -27,7 +50,8 @@ export async function sendOTP(email) {
     throw new Error('Invalid email address');
   }
 
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  // Cryptographically secure 6-digit OTP generation
+  const code = crypto.randomInt(100000, 1000000).toString();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
   await db('otps').insert({ email, code, expires_at: expiresAt });
@@ -98,11 +122,17 @@ export async function loginWithPassword(email, password) {
   return generateTokenSet(user);
 }
 
+export function hashRefreshToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
 export async function refreshTokens(refreshToken) {
   if (!refreshToken) throw new Error('Refresh token is required');
 
+  const hashedRefreshToken = hashRefreshToken(refreshToken);
+
   const dbToken = await db('refresh_tokens')
-    .where({ token: refreshToken })
+    .where({ token: hashedRefreshToken })
     .andWhere('expires_at', '>', db.fn.now())
     .whereNull('revoked_at')
     .first();
@@ -120,8 +150,10 @@ export async function refreshTokens(refreshToken) {
 export async function revokeToken(refreshToken) {
   if (!refreshToken) throw new Error('Token is required for revocation');
 
+  const hashedRefreshToken = hashRefreshToken(refreshToken);
+
   const updatedRows = await db('refresh_tokens')
-    .where({ token: refreshToken })
+    .where({ token: hashedRefreshToken })
     .whereNull('revoked_at')
     .update({ revoked_at: db.fn.now() });
 
@@ -173,9 +205,10 @@ export async function generateTokenSet(user) {
 
   const refreshTokenString = crypto.randomBytes(40).toString('hex');
   const refreshTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const hashedRefreshToken = hashRefreshToken(refreshTokenString);
 
   await db('refresh_tokens').insert({
-    token: refreshTokenString,
+    token: hashedRefreshToken,
     user_id: user.id,
     expires_at: refreshTokenExpiry
   });
