@@ -46,6 +46,7 @@ CREATE TABLE users (
     google_id    VARCHAR(100) UNIQUE DEFAULT NULL,  -- NULL for password/OTP-only accounts
     password_hash VARCHAR(255)       DEFAULT NULL,  -- NULL for Google-only accounts
     role_id      INT REFERENCES roles(id) ON DELETE SET NULL,
+    token_version INT DEFAULT 1,
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -58,6 +59,7 @@ CREATE TABLE otps (
     code       VARCHAR(6)   NOT NULL,
     expires_at TIMESTAMPTZ  NOT NULL,
     used       BOOLEAN      DEFAULT FALSE,
+    attempts   INT          DEFAULT 0,
     created_at TIMESTAMPTZ  DEFAULT NOW()
 );
 

@@ -2,6 +2,15 @@ import jwt from 'jsonwebtoken';
 import keys from './keys.js';
 import { db } from './db.js';
 
+// In-memory blocklist for explicitly revoked active access tokens
+export const tokenBlocklist = new Set();
+
+export const revokeAccessToken = (token) => {
+  if (token) {
+    tokenBlocklist.add(token);
+  }
+};
+
 export const authenticateToken = (req, res, next) => {
   let token = req.cookies?.access_token;
   if (!token) {
@@ -11,12 +20,28 @@ export const authenticateToken = (req, res, next) => {
 
   if (!token) return res.status(401).json({ error: 'Access token required' });
 
-  jwt.verify(token, keys.publicKey, { algorithms: ['RS256'] }, (err, user) => {
+  if (tokenBlocklist.has(token)) {
+    return res.status(401).json({ error: 'Token has been revoked', code: 'TOKEN_REVOKED' });
+  }
+
+  jwt.verify(token, keys.publicKey, { algorithms: ['RS256'] }, async (err, user) => {
     if (err) {
       if (err.name === 'TokenExpiredError') {
         return res.status(401).json({ error: 'Access token expired', code: 'TOKEN_EXPIRED' });
       }
       return res.status(403).json({ error: 'Invalid access token' });
+    }
+
+    // Verify token_version against current user record in database
+    if (user && user.sub) {
+      try {
+        const userInDb = await db('users').where({ id: parseInt(user.sub, 10) }).first('token_version');
+        if (!userInDb || (user.token_version !== undefined && userInDb.token_version !== user.token_version)) {
+          return res.status(401).json({ error: 'Token has been revoked', code: 'TOKEN_REVOKED' });
+        }
+      } catch (dbErr) {
+        return res.status(500).json({ error: 'Internal error validating token session' });
+      }
     }
 
     req.user = user;

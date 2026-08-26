@@ -50,33 +50,63 @@ export async function sendOTP(email) {
     throw new Error('Invalid email address');
   }
 
+  const normalizedEmail = email.toLowerCase().trim();
+
+  // Invalidate any previously issued unused OTPs for this email
+  await db('otps')
+    .where({ email: normalizedEmail, used: false })
+    .update({ used: true });
+
   // Cryptographically secure 6-digit OTP generation
   const code = crypto.randomInt(100000, 1000000).toString();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-  await db('otps').insert({ email, code, expires_at: expiresAt });
+  await db('otps').insert({ email: normalizedEmail, code, expires_at: expiresAt, attempts: 0 });
 
-  console.log(`\n🔑 OTP for ${email}: ${code}\n`);
+  console.log(`\n🔑 OTP for ${normalizedEmail}: ${code}\n`);
 
   return { message: 'OTP sent successfully (check backend console)' };
 }
 
 export async function verifyOTP(email, code) {
-  const otp = await db('otps')
-    .where({ email, code })
+  if (!email || !code) throw new Error('Email and OTP code are required');
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const activeOtp = await db('otps')
+    .where({ email: normalizedEmail })
     .andWhere('expires_at', '>', db.fn.now())
     .andWhere({ used: false })
     .orderBy('created_at', 'desc')
     .first();
 
-  if (!otp) throw new Error('Invalid or expired OTP');
+  if (!activeOtp) throw new Error('Invalid or expired OTP');
 
-  await db('otps').where({ id: otp.id }).update({ used: true });
+  // Throttling: Check max failed attempts (limit 5)
+  if ((activeOtp.attempts || 0) >= 5) {
+    await db('otps').where({ id: activeOtp.id }).update({ used: true });
+    throw new Error('Too many failed attempts. This OTP has been invalidated.');
+  }
 
-  let user = await db('users').where({ email }).first();
+  // Verify code
+  if (activeOtp.code !== code.trim()) {
+    const newAttempts = (activeOtp.attempts || 0) + 1;
+    if (newAttempts >= 5) {
+      await db('otps').where({ id: activeOtp.id }).update({ attempts: newAttempts, used: true });
+      throw new Error('Too many failed attempts. This OTP has been invalidated.');
+    } else {
+      await db('otps').where({ id: activeOtp.id }).update({ attempts: newAttempts });
+      throw new Error(`Invalid OTP. ${5 - newAttempts} attempt(s) remaining.`);
+    }
+  }
+
+  // Invalidate OTP upon successful verification
+  await db('otps').where({ id: activeOtp.id }).update({ used: true });
+
+  let user = await db('users').where({ email: normalizedEmail }).first();
 
   if (!user) {
-    [user] = await db('users').insert({ email, role_id: 3 }).returning('*');
+    [user] = await db('users').insert({ email: normalizedEmail, role_id: 3 }).returning('*');
   }
 
   return generateTokenSet(user);
@@ -161,10 +191,17 @@ export async function revokeToken(refreshToken) {
 
   const hashedRefreshToken = hashRefreshToken(refreshToken);
 
+  const dbToken = await db('refresh_tokens').where({ token: hashedRefreshToken }).first();
+
   const updatedRows = await db('refresh_tokens')
     .where({ token: hashedRefreshToken })
     .whereNull('revoked_at')
     .update({ revoked_at: db.fn.now() });
+
+  if (dbToken?.user_id) {
+    // Invalidate active JWT access tokens for this user
+    await db('users').where({ id: dbToken.user_id }).increment('token_version', 1);
+  }
 
   if (updatedRows === 0) return { message: 'Token already revoked or not found' };
   return { message: 'Token successfully revoked' };
@@ -197,11 +234,15 @@ export async function generateTokenSet(user) {
     keyid: 'key-1',
   };
 
+  const userRecord = await db('users').where({ id: user.id }).first('token_version');
+  const tokenVersion = userRecord?.token_version || user.token_version || 1;
+
   const accessTokenClaims = {
     sub: String(user.id),
     email: user.email,
     role: role,
     permissions: permissions,
+    token_version: tokenVersion,
   };
   const accessToken = jwt.sign(accessTokenClaims, keys.privateKey, jwtOptions);
 

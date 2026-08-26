@@ -10,6 +10,8 @@ import fs from 'fs';
 import crypto from 'crypto';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import jwt from 'jsonwebtoken';
 
 import { initializeDatabase, db } from './db.js';
 import keys from './keys.js';
@@ -23,7 +25,7 @@ import {
   generateTokenSet,
   setPasswordForUser,
 } from './auth.js';
-import { authenticateToken } from './middleware.js';
+import { authenticateToken, revokeAccessToken } from './middleware.js';
 
 // Route modules
 import projectsRouter from './routes/projects.js';
@@ -144,6 +146,7 @@ passport.use(new GoogleStrategy(
     clientID:     process.env.GOOGLE_CLIENT_ID || 'mock-client-id',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'mock-client-secret',
     callbackURL:  process.env.GOOGLE_CALLBACK_URL,
+    state:        true,
   },
   async (_at, _rt, profile, done) => {
     try {
@@ -172,14 +175,32 @@ passport.use(new GoogleStrategy(
 ));
 
 // ----------------------------------------------------------------
-// Auth — Public Endpoints
+// Auth — Rate Limiters & Endpoints
 // ----------------------------------------------------------------
-app.post('/api/auth/otp/send', async (req, res) => {
+const isTestEnv = process.env.NODE_ENV === 'test';
+
+export const otpSendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isTestEnv ? 1000 : 5, // Limit to 5 OTP send requests per 15 mins per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many OTP requests from this IP, please try again after 15 minutes' },
+});
+
+export const otpVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isTestEnv ? 1000 : 10, // Limit to 10 OTP verification requests per 15 mins per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many OTP verification attempts from this IP, please try again after 15 minutes' },
+});
+
+app.post('/api/auth/otp/send', otpSendLimiter, async (req, res) => {
   try { res.json(await sendOTP(req.body.email)); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-app.post('/api/auth/otp/verify', async (req, res) => {
+app.post('/api/auth/otp/verify', otpVerifyLimiter, async (req, res) => {
   try {
     const tokens = await verifyOTP(req.body.email, req.body.code);
     setAuthCookies(res, tokens);
@@ -223,9 +244,26 @@ app.post('/api/auth/refresh', async (req, res) => {
 app.post('/api/auth/revoke', async (req, res) => {
   try {
     const rfToken = req.cookies.refresh_token || req.body.token || req.body.refresh_token;
+    let accessToken = req.cookies.access_token;
+    if (!accessToken) {
+      const authHeader = req.headers['authorization'];
+      accessToken = authHeader && authHeader.split(' ')[1];
+    }
+
+    if (accessToken) {
+      revokeAccessToken(accessToken);
+      try {
+        const decoded = jwt.decode(accessToken);
+        if (decoded?.sub) {
+          await db('users').where({ id: parseInt(decoded.sub, 10) }).increment('token_version', 1);
+        }
+      } catch (_) {}
+    }
+
     if (rfToken) {
       await revokeToken(rfToken);
     }
+
     res.clearCookie('access_token');
     res.clearCookie('refresh_token');
     res.json({ message: 'Token successfully revoked' });
@@ -248,7 +286,7 @@ app.post('/api/auth/set-password', authenticateToken, async (req, res) => {
 // Google OAuth Routes
 // ----------------------------------------------------------------
 app.get('/api/auth/google',
-  passport.authenticate('google', { scope: ['openid', 'email', 'profile'] })
+  passport.authenticate('google', { scope: ['openid', 'email', 'profile'], state: true })
 );
 
 app.get('/api/auth/google/callback',

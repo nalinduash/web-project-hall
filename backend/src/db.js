@@ -60,6 +60,12 @@ export const initializeDatabase = async () => {
     } else {
       console.log('Database schema already exists. Skipping initialization.');
     }
+
+    // Ensure token_version and otps.attempts exist on pre-existing databases
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INT DEFAULT 1;
+      ALTER TABLE otps ADD COLUMN IF NOT EXISTS attempts INT DEFAULT 0;
+    `);
   } catch (error) {
     console.error('Error initializing database:', error);
     throw error;
