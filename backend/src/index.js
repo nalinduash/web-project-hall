@@ -399,6 +399,35 @@ app.use('/api/users',    usersRouter);
 app.use('/api/admin',    adminRouter);
 
 // ----------------------------------------------------------------
+// 404 & Centralized Error Handling Middleware
+// ----------------------------------------------------------------
+app.use((req, res, _next) => {
+  res.status(404).json({ error: `Cannot ${req.method} ${req.originalUrl}` });
+});
+
+app.use((err, req, res, _next) => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const statusCode = err.status || err.statusCode || (res.statusCode >= 400 ? res.statusCode : 500);
+
+  logger.error('Unhandled application exception', {
+    message: err.message,
+    statusCode,
+    path: req.originalUrl,
+    method: req.method,
+    ip: req.ip,
+  });
+
+  const responseError = isProduction && statusCode === 500
+    ? 'Internal server error'
+    : (err.message || 'Internal server error');
+
+  res.status(statusCode).json({
+    error: responseError,
+    ...(isProduction ? {} : { stack: err.stack }),
+  });
+});
+
+// ----------------------------------------------------------------
 // Start
 // ----------------------------------------------------------------
 import { fileURLToPath } from 'url';
