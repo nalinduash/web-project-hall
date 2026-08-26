@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import api, { API_URL } from '../lib/api';
 
 export default function Login() {
-  const { login, signup } = useAuth();
+  const { login, signup, fetchProfile } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -47,11 +47,8 @@ export default function Login() {
   const handleVerifyOTP = async (e) => {
     e.preventDefault();
     try {
-      const { data } = await api.post('/api/auth/otp/verify', { email, code });
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('refresh_token', data.refresh_token);
-      localStorage.setItem('id_token', data.id_token);
-      window.location.reload();
+      await api.post('/api/auth/otp/verify', { email, code });
+      await fetchProfile();
     } catch (err) {
       setMsg({ text: err.response?.data?.error || 'OTP verification failed', type: 'error' });
     }
