@@ -1,10 +1,16 @@
-FROM node:22-alpine
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
 
 WORKDIR /app
 
-# Install dependencies first (cached layer)
-COPY package*.json ./
-RUN npm install
+# Ensure /app directory is owned by non-root node user
+RUN chown -R node:node /app
+
+# Install dependencies with exact lockfile reproducibility and scripts disabled
+COPY --chown=node:node package*.json ./
+RUN npm ci --ignore-scripts
+
+# Drop privileges to non-root node user
+USER node
 
 # Source is bind-mounted at runtime for hot-reload
 # Only the installed node_modules layer matters here
