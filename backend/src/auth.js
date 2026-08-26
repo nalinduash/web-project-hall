@@ -86,24 +86,33 @@ export async function signupWithPassword(email, password) {
   if (!email || !email.includes('@')) throw new Error('Invalid email address');
   if (!password || password.length < 6) throw new Error('Password must be at least 6 characters long');
 
-  const user = await db('users').where({ email }).first();
+  const normalizedEmail = email.toLowerCase().trim();
+  const user = await db('users').where({ email: normalizedEmail }).first();
   
   if (user) {
-    if (!user.password_hash) {
-      const pHash = hashPassword(password);
-      const [updatedUser] = await db('users')
-        .where({ id: user.id })
-        .update({ password_hash: pHash })
-        .returning('*');
-      return generateTokenSet(updatedUser);
-    }
     throw new Error('Email address is already registered');
   }
 
   const pHash = hashPassword(password);
-  const [newUser] = await db('users').insert({ email, password_hash: pHash, role_id: 3 }).returning('*');
+  const [newUser] = await db('users').insert({ email: normalizedEmail, password_hash: pHash, role_id: 3 }).returning('*');
 
   return generateTokenSet(newUser);
+}
+
+export async function setPasswordForUser(userId, password) {
+  if (!password || password.length < 6) {
+    throw new Error('Password must be at least 6 characters long');
+  }
+
+  const user = await db('users').where({ id: userId }).first();
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  const pHash = hashPassword(password);
+  await db('users').where({ id: userId }).update({ password_hash: pHash });
+
+  return { message: 'Password updated successfully' };
 }
 
 export async function loginWithPassword(email, password) {

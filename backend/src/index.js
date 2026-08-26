@@ -21,6 +21,7 @@ import {
   refreshTokens,
   revokeToken,
   generateTokenSet,
+  setPasswordForUser,
 } from './auth.js';
 import { authenticateToken } from './middleware.js';
 
@@ -182,7 +183,7 @@ app.post('/api/auth/otp/verify', async (req, res) => {
   try {
     const tokens = await verifyOTP(req.body.email, req.body.code);
     setAuthCookies(res, tokens);
-    res.json({ message: 'OTP verification successful' });
+    res.json({ message: 'OTP verification successful', ...tokens });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -192,7 +193,7 @@ app.post('/api/auth/signup', async (req, res) => {
   try {
     const tokens = await signupWithPassword(req.body.email, req.body.password);
     setAuthCookies(res, tokens);
-    res.status(201).json({ message: 'Signup successful' });
+    res.status(201).json({ message: 'Signup successful', ...tokens });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -202,7 +203,7 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const tokens = await loginWithPassword(req.body.email, req.body.password);
     setAuthCookies(res, tokens);
-    res.json({ message: 'Login successful' });
+    res.json({ message: 'Login successful', ...tokens });
   } catch (e) {
     res.status(401).json({ error: e.message });
   }
@@ -210,10 +211,10 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/refresh', async (req, res) => {
   try {
-    const rfToken = req.cookies.refresh_token;
+    const rfToken = req.cookies.refresh_token || req.body.refresh_token;
     const tokens = await refreshTokens(rfToken);
     setAuthCookies(res, tokens);
-    res.json({ message: 'Tokens refreshed successfully' });
+    res.json({ message: 'Tokens refreshed successfully', ...tokens });
   } catch (e) {
     res.status(401).json({ error: e.message });
   }
@@ -221,13 +222,23 @@ app.post('/api/auth/refresh', async (req, res) => {
 
 app.post('/api/auth/revoke', async (req, res) => {
   try {
-    const rfToken = req.cookies.refresh_token;
+    const rfToken = req.cookies.refresh_token || req.body.token || req.body.refresh_token;
     if (rfToken) {
       await revokeToken(rfToken);
     }
     res.clearCookie('access_token');
     res.clearCookie('refresh_token');
     res.json({ message: 'Token successfully revoked' });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/auth/set-password', authenticateToken, async (req, res) => {
+  try {
+    const userId = parseInt(req.user.sub, 10);
+    const result = await setPasswordForUser(userId, req.body.password);
+    res.json(result);
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
