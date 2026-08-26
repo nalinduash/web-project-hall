@@ -9,6 +9,7 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import fs from 'fs';
 import crypto from 'crypto';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 
 import { initializeDatabase, db } from './db.js';
 import keys from './keys.js';
@@ -85,6 +86,9 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 // ----------------------------------------------------------------
 // Core Middleware
 // ----------------------------------------------------------------
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allows uploaded images to be loaded by the frontend
+}));
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
