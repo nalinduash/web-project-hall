@@ -109,8 +109,15 @@ const setAuthCookies = (res, tokenSet) => {
   });
 };
 
-// Serve uploaded thumbnails as static files
-app.use('/uploads', express.static(UPLOADS_DIR));
+// Serve uploaded thumbnails with strict CSP, nosniff, and attachment disposition
+app.use('/uploads', express.static(UPLOADS_DIR, {
+  dotfiles: 'ignore',
+  setHeaders: (res) => {
+    res.setHeader('Content-Security-Policy', "default-src 'none'");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', 'attachment');
+  },
+}));
 
 // Session — only for the Google OAuth round-trip (5-min cookie)
 // In development, an ephemeral random secret is generated if SESSION_SECRET is not provided.

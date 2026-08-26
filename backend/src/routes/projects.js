@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import { db } from '../db.js';
 import { getProjectsQuery } from '../db.js';
 import emitter from '../events.js';
@@ -8,20 +9,85 @@ import { authenticateToken, requirePermission, requireProjectOwnership } from '.
 
 const router = Router();
 
-// Store image uploads in /app/uploads, restricted to 5MB standard formats
+const UPLOADS_DIR = process.env.UPLOADS_DIR || 
+  (fs.existsSync('/app/uploads') ? '/app/uploads' : path.join(process.cwd(), 'uploads'));
+
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Strict whitelist of allowed image extensions and MIME types
+const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const MIME_TO_EXT = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+};
+
+export function verifyImageMagicBytes(buffer) {
+  if (!buffer || buffer.length < 12) return false;
+
+  // JPEG: FF D8 FF
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+
+  // WEBP: RIFF....WEBP
+  if (
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+
+  return false;
+}
+
+// Store image uploads in UPLOADS_DIR, restricted to 5MB standard formats
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, '/app/uploads'),
+  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
   filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const safeExt = ALLOWED_EXTENSIONS.has(ext) ? ext : '.tmp';
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
+    cb(null, `${unique}${safeExt}`);
   },
 });
+
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (/image\/(jpeg|png|webp|gif)/.test(file.mimetype)) cb(null, true);
-    else cb(new Error('Only image files are allowed (jpeg, png, webp, gif)'));
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      return cb(new Error('Only image files are allowed (.jpg, .jpeg, .png, .webp)'));
+    }
+
+    if (!MIME_TO_EXT[file.mimetype]) {
+      return cb(new Error('Invalid MIME type. Only image/jpeg, image/png, and image/webp are allowed'));
+    }
+
+    cb(null, true);
   },
 });
 
@@ -139,19 +205,52 @@ router.post(
   authenticateToken,
   requirePermission('projects:write'),
   requireProjectOwnership,
-  upload.single('thumbnail'),
+  (req, res, next) => {
+    upload.single('thumbnail')(req, res, (err) => {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({ error: `Upload error: ${err.message}` });
+      } else if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+      next();
+    });
+  },
   async (req, res) => {
     const id = parseInt(req.params.id, 10);
 
     // Prevent users from altering thumbnails of moderated projects
     if (req.project?.visibility === 'removed') {
+      if (req.file?.path) {
+        await fs.promises.unlink(req.file.path).catch(() => {});
+      }
       return res.status(403).json({ error: 'This project has been removed by an administrator and cannot be modified' });
     }
 
     if (!req.file) return res.status(400).json({ error: 'No image file uploaded' });
 
     try {
-      const thumbnailUrl = `/uploads/${req.file.filename}`;
+      // Magic byte verification: inspect actual file content
+      const fd = await fs.promises.open(req.file.path, 'r');
+      const buffer = Buffer.alloc(16);
+      await fd.read(buffer, 0, 16, 0);
+      await fd.close();
+
+      const detectedMime = verifyImageMagicBytes(buffer);
+      if (!detectedMime) {
+        await fs.promises.unlink(req.file.path).catch(() => {});
+        return res.status(400).json({ error: 'File content does not match allowed image formats (magic byte verification failed)' });
+      }
+
+      // Enforce canonical file extension matching verified magic bytes
+      const canonicalExt = MIME_TO_EXT[detectedMime];
+      let finalFilename = req.file.filename;
+      if (!req.file.filename.endsWith(canonicalExt)) {
+        finalFilename = `${path.parse(req.file.filename).name}${canonicalExt}`;
+        const newPath = path.join(path.dirname(req.file.path), finalFilename);
+        await fs.promises.rename(req.file.path, newPath);
+      }
+
+      const thumbnailUrl = `/uploads/${finalFilename}`;
       const [project] = await db('projects')
         .where({ id })
         .update({ thumbnail_url: thumbnailUrl, updated_at: db.fn.now() })
@@ -159,6 +258,9 @@ router.post(
         
       res.json({ message: 'Thumbnail uploaded', project });
     } catch (err) {
+      if (req.file?.path) {
+        await fs.promises.unlink(req.file.path).catch(() => {});
+      }
       res.status(500).json({ error: 'Failed to save thumbnail' });
     }
   }
