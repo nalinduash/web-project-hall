@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { db } from './db.js';
 import keys from './keys.js';
 import dotenv from 'dotenv';
+import logger, { maskEmail } from './logger.js';
 
 dotenv.config();
 
@@ -63,9 +64,12 @@ export async function sendOTP(email) {
 
   await db('otps').insert({ email: normalizedEmail, code, expires_at: expiresAt, attempts: 0 });
 
-  console.log(`\n🔑 OTP for ${normalizedEmail}: ${code}\n`);
+  logger.info('OTP code dispatched for authentication', {
+    email: maskEmail(normalizedEmail),
+    event: 'OTP_DISPATCHED',
+  });
 
-  return { message: 'OTP sent successfully (check backend console)' };
+  return { message: 'OTP sent successfully. Please check your email.' };
 }
 
 export async function verifyOTP(email, code) {

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, getProjectsQuery } from '../db.js';
 import { authenticateToken, requirePermission, requireRole } from '../middleware.js';
 import emitter from '../events.js';
+import logger from '../logger.js';
 
 const router = Router();
 
@@ -61,6 +62,14 @@ router.put('/users/:id/role', authenticateToken, requirePermission('users:manage
 
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    logger.audit({
+      eventType: 'ADMIN_USER_ROLE_MODIFIED',
+      outcome: 'SUCCESS',
+      actorId: req.user?.sub,
+      ip: req.ip,
+      details: { targetUserId: userId, newRoleId: role_id, newRoleName: roleCheck.name },
+    });
+
     res.json({
       message: `Role updated to '${roleCheck.name}'. Permissions enforced on next request.`,
       user,
@@ -102,6 +111,14 @@ router.patch('/projects/:id/visibility', authenticateToken, requirePermission('p
       });
     }
 
+    logger.audit({
+      eventType: 'ADMIN_PROJECT_VISIBILITY_CHANGED',
+      outcome: 'SUCCESS',
+      actorId: req.user?.sub,
+      ip: req.ip,
+      details: { projectId: id, newVisibility: visibility, projectTitle: project.title },
+    });
+
     res.json({ message: `Project visibility set to '${visibility}'`, project });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update visibility' });
@@ -113,6 +130,14 @@ router.delete('/projects/:id', authenticateToken, requirePermission('projects:ma
   try {
     const [project] = await db('projects').where({ id }).del().returning(['id', 'title']);
     if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    logger.audit({
+      eventType: 'ADMIN_PROJECT_DELETED',
+      outcome: 'SUCCESS',
+      actorId: req.user?.sub,
+      ip: req.ip,
+      details: { projectId: id, projectTitle: project.title },
+    });
 
     res.json({ message: `Project "${project.title}" permanently deleted` });
   } catch (err) {

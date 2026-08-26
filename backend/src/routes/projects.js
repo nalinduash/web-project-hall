@@ -6,6 +6,7 @@ import { db } from '../db.js';
 import { getProjectsQuery } from '../db.js';
 import emitter from '../events.js';
 import { authenticateToken, requirePermission, requireProjectOwnership } from '../middleware.js';
+import logger from '../logger.js';
 
 const router = Router();
 
@@ -183,6 +184,16 @@ router.put('/:id', authenticateToken, requirePermission('projects:write'), requi
       })
       .returning('*');
 
+    if (visibility) {
+      logger.audit({
+        eventType: 'PROJECT_VISIBILITY_CHANGED',
+        outcome: 'SUCCESS',
+        actorId: req.user?.sub,
+        ip: req.ip,
+        details: { projectId: id, newVisibility: visibility, title: project.title },
+      });
+    }
+
     res.json(project);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update project' });
@@ -194,6 +205,15 @@ router.delete('/:id', authenticateToken, requirePermission('projects:write'), re
 
   try {
     await db('projects').where({ id }).del();
+
+    logger.audit({
+      eventType: 'PROJECT_DELETED',
+      outcome: 'SUCCESS',
+      actorId: req.user?.sub,
+      ip: req.ip,
+      details: { projectId: id },
+    });
+
     res.json({ message: 'Project deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete project' });

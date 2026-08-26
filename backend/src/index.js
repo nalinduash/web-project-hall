@@ -12,6 +12,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
+import logger, { maskEmail } from './logger.js';
 
 import { initializeDatabase, db } from './db.js';
 import keys from './keys.js';
@@ -204,8 +205,20 @@ app.post('/api/auth/otp/verify', otpVerifyLimiter, async (req, res) => {
   try {
     const tokens = await verifyOTP(req.body.email, req.body.code);
     setAuthCookies(res, tokens);
+    logger.audit({
+      eventType: 'AUTH_OTP_VERIFY_SUCCESS',
+      outcome: 'SUCCESS',
+      ip: req.ip,
+      details: { email: maskEmail(req.body.email) },
+    });
     res.json({ message: 'OTP verification successful', ...tokens });
   } catch (e) {
+    logger.audit({
+      eventType: 'AUTH_OTP_VERIFY_FAILURE',
+      outcome: 'FAILURE',
+      ip: req.ip,
+      details: { email: maskEmail(req.body.email), error: e.message },
+    });
     res.status(400).json({ error: e.message });
   }
 });
@@ -214,8 +227,20 @@ app.post('/api/auth/signup', async (req, res) => {
   try {
     const tokens = await signupWithPassword(req.body.email, req.body.password);
     setAuthCookies(res, tokens);
+    logger.audit({
+      eventType: 'AUTH_SIGNUP_SUCCESS',
+      outcome: 'SUCCESS',
+      ip: req.ip,
+      details: { email: maskEmail(req.body.email) },
+    });
     res.status(201).json({ message: 'Signup successful', ...tokens });
   } catch (e) {
+    logger.audit({
+      eventType: 'AUTH_SIGNUP_FAILURE',
+      outcome: 'FAILURE',
+      ip: req.ip,
+      details: { email: maskEmail(req.body.email), error: e.message },
+    });
     res.status(400).json({ error: e.message });
   }
 });
@@ -224,8 +249,20 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const tokens = await loginWithPassword(req.body.email, req.body.password);
     setAuthCookies(res, tokens);
+    logger.audit({
+      eventType: 'AUTH_LOGIN_SUCCESS',
+      outcome: 'SUCCESS',
+      ip: req.ip,
+      details: { email: maskEmail(req.body.email) },
+    });
     res.json({ message: 'Login successful', ...tokens });
   } catch (e) {
+    logger.audit({
+      eventType: 'AUTH_LOGIN_FAILURE',
+      outcome: 'FAILURE',
+      ip: req.ip,
+      details: { email: maskEmail(req.body.email), error: e.message },
+    });
     res.status(401).json({ error: e.message });
   }
 });
@@ -263,6 +300,13 @@ app.post('/api/auth/revoke', async (req, res) => {
     if (rfToken) {
       await revokeToken(rfToken);
     }
+
+    logger.audit({
+      eventType: 'AUTH_SESSION_REVOKED',
+      outcome: 'SUCCESS',
+      ip: req.ip,
+      details: { hasAccessToken: !!accessToken, hasRefreshToken: !!rfToken },
+    });
 
     res.clearCookie('access_token');
     res.clearCookie('refresh_token');
