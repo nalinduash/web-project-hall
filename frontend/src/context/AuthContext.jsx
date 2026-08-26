@@ -23,8 +23,8 @@ export const AuthProvider = ({ children }) => {
     await fetchProfile();
   };
 
-  const signup = async (email, password, role_id) => {
-    await api.post('/api/auth/signup', { email, password, role_id });
+  const signup = async (email, password) => {
+    await api.post('/api/auth/signup', { email, password });
     await fetchProfile();
   };
 

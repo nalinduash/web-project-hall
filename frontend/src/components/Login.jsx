@@ -12,7 +12,6 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const [role, setRole] = useState('3'); // 3: Student, 2: Recruiter
   const [otpSent, setOtpSent] = useState(false);
   const [msg, setMsg] = useState({ text: '', type: '' });
 
@@ -28,7 +27,7 @@ export default function Login() {
   const handleSignup = async (e) => {
     e.preventDefault();
     try {
-      await signup(email, password, parseInt(role));
+      await signup(email, password);
       setMsg({ text: 'Signup successful!', type: 'success' });
     } catch (err) {
       setMsg({ text: err.response?.data?.error || 'Signup failed', type: 'error' });
@@ -93,7 +92,6 @@ export default function Login() {
               <form onSubmit={handleSignup} className="space-y-4 pt-4">
                 <div className="space-y-2"><Label>Email</Label><Input type="email" required value={email} onChange={e => setEmail(e.target.value)} /></div>
                 <div className="space-y-2"><Label>Password</Label><Input type="password" required value={password} onChange={e => setPassword(e.target.value)} /></div>
-                <div className="space-y-2"><Label>Role</Label><select value={role} onChange={e => setRole(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"><option value="3">Student</option><option value="2">Recruiter</option></select></div>
                 <Button type="submit" className="w-full">Sign Up</Button>
               </form>
             </TabsContent>

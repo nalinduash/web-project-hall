@@ -17,9 +17,9 @@ Response: { access_token, refresh_token, id_token, token_type, expires_in }
 ### Password Signup
 ```
 POST /api/auth/signup
-Body: { "email": "user@example.com", "password": "secret", "role_id": 3 }
-Role IDs: 1=admin, 2=recruiter, 3=student
-Response: { access_token, refresh_token, id_token, ... }
+Body: { "email": "user@example.com", "password": "secret" }
+Response: { "message": "Signup successful" }
+Note: All self-registrations enforce role_id = 3 (Student). Role elevation requires an administrator.
 ```
 
 ### Magic OTP (Passwordless)

@@ -136,7 +136,7 @@ app.post('/api/auth/otp/verify', async (req, res) => {
 
 app.post('/api/auth/signup', async (req, res) => {
   try {
-    const tokens = await signupWithPassword(req.body.email, req.body.password, req.body.role_id || 3);
+    const tokens = await signupWithPassword(req.body.email, req.body.password);
     setAuthCookies(res, tokens);
     res.status(201).json({ message: 'Signup successful' });
   } catch (e) {

@@ -58,7 +58,7 @@ export async function verifyOTP(email, code) {
   return generateTokenSet(user);
 }
 
-export async function signupWithPassword(email, password, roleId = 3) {
+export async function signupWithPassword(email, password) {
   if (!email || !email.includes('@')) throw new Error('Invalid email address');
   if (!password || password.length < 6) throw new Error('Password must be at least 6 characters long');
 
@@ -77,7 +77,7 @@ export async function signupWithPassword(email, password, roleId = 3) {
   }
 
   const pHash = hashPassword(password);
-  const [newUser] = await db('users').insert({ email, password_hash: pHash, role_id: roleId }).returning('*');
+  const [newUser] = await db('users').insert({ email, password_hash: pHash, role_id: 3 }).returning('*');
 
   return generateTokenSet(newUser);
 }
