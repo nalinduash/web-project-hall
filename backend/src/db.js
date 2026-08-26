@@ -50,7 +50,13 @@ export const initializeDatabase = async () => {
       const sql = fs.readFileSync(sqlPath, 'utf8');
       
       await pool.query(sql);
-      console.log('Database initialized successfully with seeded roles, permissions, and test users.');
+      console.log('Database initialized successfully with schema, roles, and permissions.');
+
+      // Default demo accounts are never seeded in production
+      if (process.env.NODE_ENV !== 'production') {
+        await seedDevAccounts();
+        console.log('Seeded development accounts (development/test mode only).');
+      }
     } else {
       console.log('Database schema already exists. Skipping initialization.');
     }
@@ -58,6 +64,20 @@ export const initializeDatabase = async () => {
     console.error('Error initializing database:', error);
     throw error;
   }
+};
+
+export const seedDevAccounts = async () => {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+  const devPasswordHash = '4ee5a882a176cb403986adbc3296c050:f65fd9978052b74a349456f507d7f134b87b8cf6c83953fd4a1d585c0503a73925b50bde3f32036e2324c770644546aa197e8f34b52374af99b8730212033939';
+  await pool.query(`
+    INSERT INTO users (email, name, password_hash, role_id) VALUES
+      ('admin@school.com',     'Admin User',     $1, 1),
+      ('recruiter@school.com', 'Demo Recruiter', $1, 2),
+      ('student@school.com',   'Demo Student',   $1, 3)
+    ON CONFLICT (email) DO NOTHING;
+  `, [devPasswordHash]);
 };
 
 export default pool;

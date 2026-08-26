@@ -8,15 +8,15 @@ services:
     container_name: project_hall_db
     restart: always
     ports:
-      - "5433:5432"       # 5433 on host → avoids clash with any native PG on host
+      - "127.0.0.1:5433:5432"       # 5433 bound to localhost only (prevents public 0.0.0.0 exposure)
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: project_hall
+      POSTGRES_USER: ${PGUSER:-postgres}
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+      POSTGRES_DB: ${PGDATABASE:-project_hall}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d project_hall"]
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-postgres} -d ${PGDATABASE:-project_hall}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -35,13 +35,13 @@ services:
       - "5000:5000"
     environment:
       # Override DB connection for Docker network — backend reaches db by service name
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 5000
       PGHOST: db          # service name on Docker internal network
       PGPORT: 5432        # internal container port (not the host-side 5433 mapping)
-      PGUSER: postgres
-      PGPASSWORD: postgres
-      PGDATABASE: project_hall
+      PGUSER: ${PGUSER:-postgres}
+      PGPASSWORD: ${PGPASSWORD}
+      PGDATABASE: ${PGDATABASE:-project_hall}
       JWT_ISSUER: http://localhost:5000
       JWT_AUDIENCE: http://localhost:5173
       # Google OAuth2
@@ -49,7 +49,7 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_CALLBACK_URL: http://localhost:5000/api/auth/google/callback
       FRONTEND_URL: http://localhost:5173
-      SESSION_SECRET: project_hall_dev_session_secret_change_in_prod
+      SESSION_SECRET: ${SESSION_SECRET}
     volumes:
       # Bind-mount source for hot-reload (nodemon watches these)
       - ./backend/src:/app/src

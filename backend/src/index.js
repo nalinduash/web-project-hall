@@ -7,6 +7,7 @@ import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 
 import fs from 'fs';
+import crypto from 'crypto';
 import cookieParser from 'cookie-parser';
 
 import { initializeDatabase, db } from './db.js';
@@ -28,6 +29,45 @@ import usersRouter    from './routes/users.js';
 import adminRouter    from './routes/admin.js';
 
 dotenv.config();
+
+// Default/insecure secrets that must never be used in non-development modes
+const INSECURE_SESSION_SECRETS = [
+  'dev_secret',
+  'project_hall_dev_session_secret_change_in_prod',
+  'secret',
+  'password',
+  '123456',
+  'change_this_to_a_secure_random_string',
+  'change_this_to_a_secure_random_string_in_production',
+];
+
+const INSECURE_PG_PASSWORDS = [
+  'postgres',
+  'password',
+  'root',
+  'admin',
+  '123456',
+  'change_this_to_a_secure_password',
+];
+
+export const validateStartupSecrets = (env = process.env) => {
+  const isDevOrTest = env.NODE_ENV === 'development' || env.NODE_ENV === 'test';
+  if (!isDevOrTest) {
+    const sessionSecret = env.SESSION_SECRET?.trim();
+    if (!sessionSecret || INSECURE_SESSION_SECRETS.includes(sessionSecret)) {
+      const msg = 'FATAL: SESSION_SECRET is missing or using an insecure default value in non-development mode.';
+      console.error(`❌ ${msg}`);
+      throw new Error(msg);
+    }
+
+    const pgPassword = env.PGPASSWORD?.trim();
+    if (!pgPassword || INSECURE_PG_PASSWORDS.includes(pgPassword.toLowerCase())) {
+      const msg = 'FATAL: PGPASSWORD is missing or using default credentials in non-development mode.';
+      console.error(`❌ ${msg}`);
+      throw new Error(msg);
+    }
+  }
+};
 
 const app          = express();
 const PORT         = process.env.PORT || 5000;
@@ -69,11 +109,14 @@ const setAuthCookies = (res, tokenSet) => {
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Session — only for the Google OAuth round-trip (5-min cookie)
+// In development, an ephemeral random secret is generated if SESSION_SECRET is not provided.
+const sessionSecret = process.env.SESSION_SECRET || (process.env.NODE_ENV !== 'production' ? crypto.randomBytes(32).toString('hex') : null);
+
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'dev_secret',
+  secret: sessionSecret || crypto.randomBytes(32).toString('hex'),
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false, maxAge: 5 * 60 * 1000 },
+  cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 5 * 60 * 1000 },
 }));
 
 app.use(passport.initialize());
@@ -258,6 +301,7 @@ import { fileURLToPath } from 'url';
 
 const startServer = async () => {
   try {
+    validateStartupSecrets();
     await initializeDatabase();
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Server running at http://localhost:${PORT}`);

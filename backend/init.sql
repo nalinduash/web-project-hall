@@ -175,13 +175,3 @@ ON CONFLICT DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id) VALUES
     (3,1),(3,2),(3,3),(3,4)
 ON CONFLICT DO NOTHING;
-
--- ============================================================
--- SEED: Default dev accounts  (password = "password123")
--- PBKDF2 salt:hash
--- ============================================================
-INSERT INTO users (email, name, password_hash, role_id) VALUES
-    ('admin@school.com',     'Admin User',     '4ee5a882a176cb403986adbc3296c050:f65fd9978052b74a349456f507d7f134b87b8cf6c83953fd4a1d585c0503a73925b50bde3f32036e2324c770644546aa197e8f34b52374af99b8730212033939', 1),
-    ('recruiter@school.com', 'Demo Recruiter', '4ee5a882a176cb403986adbc3296c050:f65fd9978052b74a349456f507d7f134b87b8cf6c83953fd4a1d585c0503a73925b50bde3f32036e2324c770644546aa197e8f34b52374af99b8730212033939', 2),
-    ('student@school.com',   'Demo Student',   '4ee5a882a176cb403986adbc3296c050:f65fd9978052b74a349456f507d7f134b87b8cf6c83953fd4a1d585c0503a73925b50bde3f32036e2324c770644546aa197e8f34b52374af99b8730212033939', 3)
-ON CONFLICT (email) DO NOTHING;
