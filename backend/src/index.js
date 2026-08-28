@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import session from 'express-session';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import https from 'https';
+import http from 'http';
 
 import fs from 'fs';
 import crypto from 'crypto';
@@ -16,6 +18,7 @@ import logger, { maskEmail } from './logger.js';
 
 import { initializeDatabase, db } from './db.js';
 import keys from './keys.js';
+import { loadSSLOptions } from './ssl.js';
 import {
   sendOTP,
   verifyOTP,
@@ -78,6 +81,7 @@ const app          = express();
 const PORT         = process.env.PORT || 5000;
 const JWT_ISSUER   = process.env.JWT_ISSUER   || 'http://localhost:5000';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const IS_SECURE    = process.env.NODE_ENV === 'production' || process.env.USE_HTTPS === 'true';
 
 // Determine uploads directory dynamically (Docker volume vs local fallback)
 const UPLOADS_DIR = process.env.UPLOADS_DIR || 
@@ -90,6 +94,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 // ----------------------------------------------------------------
 // Core Middleware
 // ----------------------------------------------------------------
+app.set('trust proxy', 1);
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allows uploaded images to be loaded by the frontend
 }));
@@ -100,14 +105,14 @@ app.use(cookieParser());
 const setAuthCookies = (res, tokenSet) => {
   res.cookie('access_token', tokenSet.access_token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: IS_SECURE,
     sameSite: 'lax',
     maxAge: 15 * 60 * 1000, // 15 mins
   });
 
   res.cookie('refresh_token', tokenSet.refresh_token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: IS_SECURE,
     sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
@@ -131,7 +136,7 @@ app.use(session({
   secret: sessionSecret || crypto.randomBytes(32).toString('hex'),
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 5 * 60 * 1000 },
+  cookie: { secure: IS_SECURE, maxAge: 5 * 60 * 1000 },
 }));
 
 app.use(passport.initialize());
@@ -436,11 +441,23 @@ const startServer = async () => {
   try {
     validateStartupSecrets();
     await initializeDatabase();
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server running at http://localhost:${PORT}`);
-      console.log(`🔐 OIDC: http://localhost:${PORT}/api/auth/.well-known/openid-configuration`);
-      console.log(`🔑 JWKS: http://localhost:${PORT}/api/auth/jwks.json`);
-      console.log(`🌐 Google OAuth: http://localhost:${PORT}/api/auth/google`);
+
+    const USE_HTTPS = process.env.USE_HTTPS === 'true';
+    let server;
+    const protocol = USE_HTTPS ? 'https' : 'http';
+
+    if (USE_HTTPS) {
+      const sslOptions = loadSSLOptions();
+      server = https.createServer(sslOptions, app);
+    } else {
+      server = http.createServer(app);
+    }
+
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 Server running at ${protocol}://localhost:${PORT}`);
+      console.log(`🔐 OIDC: ${protocol}://localhost:${PORT}/api/auth/.well-known/openid-configuration`);
+      console.log(`🔑 JWKS: ${protocol}://localhost:${PORT}/api/auth/jwks.json`);
+      console.log(`🌐 Google OAuth: ${protocol}://localhost:${PORT}/api/auth/google`);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);

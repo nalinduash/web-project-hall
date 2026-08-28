@@ -1,5 +1,4 @@
 services:
-
   # -------------------------------------------------------
   # PostgreSQL Database
   # -------------------------------------------------------
@@ -8,7 +7,7 @@ services:
     container_name: project_hall_db
     restart: always
     ports:
-      - "127.0.0.1:5433:5432"       # 5433 bound to localhost only (prevents public 0.0.0.0 exposure)
+      - "127.0.0.1:5433:5432" # 5433 bound to localhost only (prevents public 0.0.0.0 exposure)
     environment:
       POSTGRES_USER: ${PGUSER:-postgres}
       POSTGRES_PASSWORD: ${PGPASSWORD}
@@ -16,7 +15,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-postgres} -d ${PGDATABASE:-project_hall}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${PGUSER:-postgres} -d ${PGDATABASE:-project_hall}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -34,11 +37,10 @@ services:
     ports:
       - "5000:5000"
     environment:
-      # Override DB connection for Docker network — backend reaches db by service name
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 5000
-      PGHOST: db          # service name on Docker internal network
-      PGPORT: 5432        # internal container port (not the host-side 5433 mapping)
+      PGHOST: db # service name on Docker internal network
+      PGPORT: 5432
       PGUSER: ${PGUSER:-postgres}
       PGPASSWORD: ${PGPASSWORD}
       PGDATABASE: ${PGDATABASE:-project_hall}
@@ -50,21 +52,18 @@ services:
       GOOGLE_CALLBACK_URL: http://localhost:5000/api/auth/google/callback
       FRONTEND_URL: http://localhost:5173
       SESSION_SECRET: ${SESSION_SECRET}
+      USE_HTTPS: "${USE_HTTPS:-false}"
     volumes:
-      # Bind-mount source for hot-reload (nodemon watches these)
       - ./backend/src:/app/src
       - ./backend/tests:/app/tests
       - ./backend/init.sql:/app/init.sql
-      # Host bind mount for RSA keypair — keys live on your machine at ./backend/.keys
-      # Survives ALL docker compose operations including `down -v`
       - ./backend/.keys:/app/.keys
-      # Named volume for uploaded project thumbnails
+      - ./backend/.certs:/app/.certs
       - uploads_data:/app/uploads
     depends_on:
       db:
-        condition: service_healthy  # Wait for Postgres to actually accept connections
+        condition: service_healthy # Wait for Postgres to actually accept connections
 
 volumes:
   postgres_data:
   uploads_data:
- 
