@@ -79,9 +79,17 @@ export const validateStartupSecrets = (env = process.env) => {
 
 const app          = express();
 const PORT         = process.env.PORT || 5000;
-const JWT_ISSUER   = process.env.JWT_ISSUER   || 'http://localhost:5000';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const IS_SECURE    = process.env.NODE_ENV === 'production' || process.env.USE_HTTPS === 'true';
+const JWT_ISSUER   = process.env.JWT_ISSUER   || (IS_SECURE ? 'https://localhost:5000' : 'http://localhost:5000');
+const FRONTEND_URL = process.env.FRONTEND_URL || (IS_SECURE ? 'https://localhost:5173' : 'http://localhost:5173');
+
+const allowedOrigins = [
+  FRONTEND_URL,
+  'https://localhost:5173',
+  'http://localhost:5173',
+  'https://127.0.0.1:5173',
+  'http://127.0.0.1:5173',
+].filter(Boolean);
 
 // Determine uploads directory dynamically (Docker volume vs local fallback)
 const UPLOADS_DIR = process.env.UPLOADS_DIR || 
@@ -98,7 +106,19 @@ app.set('trust proxy', 1);
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allows uploaded images to be loaded by the frontend
 }));
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      allowedOrigins.includes(origin) ||
+      (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:[0-9]+)?$/.test(origin))
+    ) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS policy: Origin ${origin} not allowed`));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(cookieParser());
 
