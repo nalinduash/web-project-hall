@@ -92,6 +92,12 @@ npm run dev
 
 The frontend will start at: **`https://localhost:5173`** (or `http://localhost:5173`).
 
+#### Step 5: Accept Local SSL Certificates in Browser (First-Time Setup)
+
+When running over HTTPS with local self-signed certificates, complete the [1-minute browser certificate setup](#-running-with-https--browser-certificate-setup) so your browser trusts both the frontend and backend:
+1. Open `https://localhost:5173` in your browser $\rightarrow$ click **Advanced...** $\rightarrow$ **Accept the Risk and Continue** (or **Proceed to localhost**).
+2. Open `https://localhost:5000/api/auth/.well-known/openid-configuration` in a new tab $\rightarrow$ click **Advanced...** $\rightarrow$ **Accept the Risk and Continue**.
+
 ---
 
 ### Option 2: Local Development Setup (Without Docker)
@@ -146,6 +152,11 @@ If you prefer to run both backend and frontend directly on your host machine:
    ```
    Open your browser and visit: **`https://localhost:5173`**
 
+#### Step 4: Accept Local SSL Certificates in Browser (First-Time Setup)
+
+1. Open `https://localhost:5173` $\rightarrow$ click **Advanced...** $\rightarrow$ **Accept the Risk and Continue**.
+2. Open `https://localhost:5000/api/auth/.well-known/openid-configuration` $\rightarrow$ click **Advanced...** $\rightarrow$ **Accept the Risk and Continue**.
+
 ---
 
 ## 🔒 Running with HTTPS & Browser Certificate Setup
@@ -168,8 +179,18 @@ When accessing `https://localhost:5173` for the first time, your browser (Firefo
 
 _Your browser will remember the exception, and the app will load smoothly._
 
+### ⚠️ Troubleshooting: "Cross-Origin Request Blocked ... (Reason: CORS request did not succeed). Status code: (null)"
+
+If you see this error in your browser console:
+```text
+Cross-Origin Request Blocked: The Same Origin Policy disallows reading the remote resource at https://localhost:5000/api/auth/me. (Reason: CORS request did not succeed). Status code: (null).
+```
+**Why this occurs:** Modern browsers automatically block background `fetch`/`axios` requests to an untrusted HTTPS port (`localhost:5000`) before exchanging CORS headers, reporting it as a CORS error with status `(null)`.
+
+**Solution:** Simply visit `https://localhost:5000/api/auth/.well-known/openid-configuration` in a browser tab once and click **Accept the Risk and Continue** (Step 2 above), then reload your frontend.
+
 > 💡 **Prefer HTTP instead?**
-> Set `USE_HTTPS=false` in `backend/.env` and `VITE_HTTPS=false` in `frontend/.env`.
+> Set `USE_HTTPS=false` in `.env` (or `backend/.env`) and `VITE_HTTPS=false`, `VITE_API_URL=http://localhost:5000` in `frontend/.env`.
 
 ---
 
