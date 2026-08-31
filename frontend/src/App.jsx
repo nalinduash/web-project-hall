@@ -8,18 +8,8 @@ function AppContent() {
 
   useEffect(() => {
     if (window.location.pathname === '/auth/callback') {
-      const params = new URLSearchParams(window.location.search);
-      const accessToken = params.get('access_token');
-      const refreshToken = params.get('refresh_token');
-      const idToken = params.get('id_token');
-
-      if (accessToken && refreshToken && idToken) {
-        localStorage.setItem('access_token', accessToken);
-        localStorage.setItem('refresh_token', refreshToken);
-        localStorage.setItem('id_token', idToken);
-        window.history.replaceState({}, document.title, '/');
-        fetchProfile();
-      }
+      window.history.replaceState({}, document.title, '/');
+      fetchProfile();
     }
   }, [fetchProfile]);
 
