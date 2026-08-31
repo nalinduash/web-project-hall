@@ -8,6 +8,15 @@ dotenv.config();
 
 const JWT_ISSUER = process.env.JWT_ISSUER || 'http://localhost:5000';
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE || 'http://localhost:5173';
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeEmail(email) {
+  return typeof email === 'string' ? email.trim().toLowerCase() : '';
+}
+
+function validatePassword(password) {
+  return typeof password === 'string' && password.length >= 6 && /^(?=.*[A-Za-z])(?=.*\d).+$/u.test(password);
+}
 
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -23,23 +32,25 @@ export function verifyPassword(password, storedPasswordHash) {
 }
 
 export async function sendOTP(email) {
-  if (!email || !email.includes('@')) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!EMAIL_RE.test(normalizedEmail)) {
     throw new Error('Invalid email address');
   }
 
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-  await db('otps').insert({ email, code, expires_at: expiresAt });
+  await db('otps').insert({ email: normalizedEmail, code, expires_at: expiresAt });
 
-  console.log(`\n🔑 OTP for ${email}: ${code}\n`);
+  console.log(`\n🔑 OTP for ${normalizedEmail}: ${code}\n`);
 
   return { message: 'OTP sent successfully (check backend console)' };
 }
 
 export async function verifyOTP(email, code) {
+  const normalizedEmail = normalizeEmail(email);
   const otp = await db('otps')
-    .where({ email, code })
+    .where({ email: normalizedEmail, code })
     .andWhere('expires_at', '>', db.fn.now())
     .andWhere({ used: false })
     .orderBy('created_at', 'desc')
@@ -49,20 +60,21 @@ export async function verifyOTP(email, code) {
 
   await db('otps').where({ id: otp.id }).update({ used: true });
 
-  let user = await db('users').where({ email }).first();
+  let user = await db('users').where({ email: normalizedEmail }).first();
 
   if (!user) {
-    [user] = await db('users').insert({ email, role_id: 3 }).returning('*');
+    [user] = await db('users').insert({ email: normalizedEmail, role_id: 3 }).returning('*');
   }
 
   return generateTokenSet(user);
 }
 
 export async function signupWithPassword(email, password, roleId = 3) {
-  if (!email || !email.includes('@')) throw new Error('Invalid email address');
-  if (!password || password.length < 6) throw new Error('Password must be at least 6 characters long');
+  const normalizedEmail = normalizeEmail(email);
+  if (!EMAIL_RE.test(normalizedEmail)) throw new Error('Invalid email address');
+  if (!validatePassword(password)) throw new Error('Password must be at least 6 characters and contain a letter and number');
 
-  const user = await db('users').where({ email }).first();
+  const user = await db('users').where({ email: normalizedEmail }).first();
   
   if (user) {
     if (!user.password_hash) {
@@ -77,15 +89,16 @@ export async function signupWithPassword(email, password, roleId = 3) {
   }
 
   const pHash = hashPassword(password);
-  const [newUser] = await db('users').insert({ email, password_hash: pHash, role_id: roleId }).returning('*');
+  const [newUser] = await db('users').insert({ email: normalizedEmail, password_hash: pHash, role_id: roleId }).returning('*');
 
   return generateTokenSet(newUser);
 }
 
 export async function loginWithPassword(email, password) {
-  if (!email || !password) throw new Error('Email and password are required');
+  const normalizedEmail = normalizeEmail(email);
+  if (!EMAIL_RE.test(normalizedEmail) || !password) throw new Error('Valid email and password are required');
 
-  const user = await db('users').where({ email }).first();
+  const user = await db('users').where({ email: normalizedEmail }).first();
   if (!user) throw new Error('Invalid email or password');
   
   if (!user.password_hash) {
@@ -171,7 +184,7 @@ export async function generateTokenSet(user) {
   };
   const idToken = jwt.sign(idTokenClaims, keys.privateKey, jwtOptions);
 
-  const refreshTokenString = crypto.randomBytes(40).toString('hex');
+  const refreshTokenString = crypto.randomBytes(32).toString('hex');
   const refreshTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
   await db('refresh_tokens').insert({
