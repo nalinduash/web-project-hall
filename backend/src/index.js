@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import dotenv from 'dotenv';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import session from 'express-session';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
@@ -33,6 +35,7 @@ const app          = express();
 const PORT         = process.env.PORT || 5000;
 const JWT_ISSUER   = process.env.JWT_ISSUER   || 'http://localhost:5000';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const allowedOrigins = (process.env.CORS_ORIGINS || `${FRONTEND_URL},http://localhost:5173,http://127.0.0.1:5173`).split(',').map((origin) => origin.trim()).filter(Boolean);
 
 // Determine uploads directory dynamically (Docker volume vs local fallback)
 const UPLOADS_DIR = process.env.UPLOADS_DIR || 
@@ -45,23 +48,49 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 // ----------------------------------------------------------------
 // Core Middleware
 // ----------------------------------------------------------------
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
-app.use(express.json());
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: 'same-site' },
+}));
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+});
+app.use('/api', apiLimiter);
+app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
 const setAuthCookies = (res, tokenSet) => {
   res.cookie('access_token', tokenSet.access_token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 15 * 60 * 1000, // 15 mins
+    sameSite: 'strict',
+    maxAge: 15 * 60 * 1000,
   });
 
   res.cookie('refresh_token', tokenSet.refresh_token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 };
 
