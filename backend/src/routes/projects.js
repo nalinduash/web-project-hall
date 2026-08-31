@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import fs from 'fs';
 import multer from 'multer';
 import path from 'path';
 import { db } from '../db.js';
@@ -9,19 +10,34 @@ import { authenticateToken, requirePermission, requireProjectOwnership } from '.
 const router = Router();
 
 // Store image uploads in /app/uploads, restricted to 5MB standard formats
+const uploadsDir = process.env.UPLOADS_DIR || (fs.existsSync('/app/uploads') ? '/app/uploads' : path.join(process.cwd(), 'uploads'));
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, '/app/uploads'),
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
   filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const safeBase = path.basename(file.originalname || 'upload', ext).replace(/[^a-zA-Z0-9_-]/g, '_');
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
+    cb(null, `${safeBase}-${unique}${ext}`);
   },
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => {
-    if (/image\/(jpeg|png|webp|gif)/.test(file.mimetype)) cb(null, true);
-    else cb(new Error('Only image files are allowed (jpeg, png, webp, gif)'));
+    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+    const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+    const ext = path.extname(file.originalname || '').toLowerCase();
+
+    if (allowedMimeTypes.has(file.mimetype) && allowedExtensions.has(ext)) {
+      cb(null, true);
+      return;
+    }
+
+    cb(new Error('Only image files are allowed (jpeg, png, webp, gif)'));
   },
 });
 

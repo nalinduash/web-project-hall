@@ -48,10 +48,7 @@ export default function Login() {
   const handleVerifyOTP = async (e) => {
     e.preventDefault();
     try {
-      const { data } = await api.post('/api/auth/otp/verify', { email, code });
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('refresh_token', data.refresh_token);
-      localStorage.setItem('id_token', data.id_token);
+      await api.post('/api/auth/otp/verify', { email, code });
       window.location.reload();
     } catch (err) {
       setMsg({ text: err.response?.data?.error || 'OTP verification failed', type: 'error' });
